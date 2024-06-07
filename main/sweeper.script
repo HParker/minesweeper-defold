@@ -1,0 +1,322 @@
+TILE_SIZE = 32
+
+local function set_face(face)
+	if face == "smile" then
+		tilemap.set_tile("#normal", "layer1", 8, 19, 17)
+		tilemap.set_tile("#normal", "layer1", 9, 19, 18)
+		tilemap.set_tile("#normal", "layer1", 8, 18, 25)
+		tilemap.set_tile("#normal", "layer1", 9, 18, 26)
+	elseif face == "anticipation" then
+		tilemap.set_tile("#normal", "layer1", 8, 19, 21)
+		tilemap.set_tile("#normal", "layer1", 9, 19, 22)
+		tilemap.set_tile("#normal", "layer1", 8, 18, 29)
+		tilemap.set_tile("#normal", "layer1", 9, 18, 30)
+	elseif face == "dead" then
+		tilemap.set_tile("#normal", "layer1", 8, 19, 69)
+		tilemap.set_tile("#normal", "layer1", 9, 19, 70)
+		tilemap.set_tile("#normal", "layer1", 8, 18, 77)
+		tilemap.set_tile("#normal", "layer1", 9, 18, 78)
+	elseif face == "pressed" then
+		tilemap.set_tile("#normal", "layer1", 8, 19, 19)
+		tilemap.set_tile("#normal", "layer1", 9, 19, 20)
+		tilemap.set_tile("#normal", "layer1", 8, 18, 27)
+		tilemap.set_tile("#normal", "layer1", 9, 18, 28)
+	elseif face == "cool" then
+		tilemap.set_tile("#normal", "layer1", 8, 19, 33)
+		tilemap.set_tile("#normal", "layer1", 9, 19, 34)
+		tilemap.set_tile("#normal", "layer1", 8, 18, 41)
+		tilemap.set_tile("#normal", "layer1", 9, 18, 42)
+	end
+end
+
+local function put_bombs(self, count, first_click_x, first_click_y)
+	local placed_count = 0
+	while placed_count < count do
+		local placed = false
+		while not placed do
+			local x = math.random(1, 16)
+			local y = math.random(1, 16)
+			local tile = tilemap.get_tile("#normal", "layer1", x, y)
+			if tile == 10 and not self.bomb_locations[x*16 + y] then
+				if not (x >= first_click_x - 1 and x <= first_click_x + 1 and
+				y >= first_click_y - 1 and y <= first_click_y + 1) then
+					placed = true
+					placed_count = placed_count + 1
+					self.bomb_locations[x*16 + y] = true
+				end
+			end
+		end
+	end
+end
+
+local function check_win(self)
+	local won = true
+	for x = self.tx, self.tw do
+		for y = self.ty, self.th do
+			if tilemap.get_tile("#normal", "layer1", x, y) == 10 and not self.bomb_locations[x*16 + y] then
+				won = false
+			end
+		end
+	end
+	self.won = won
+end
+
+local function at(self, x, y)
+	if x > 0 and x < 17 and y > 0 and y < 17 and self.bomb_locations[x*16 + y] then
+		return 1
+	else
+		return 0
+	end
+end
+
+local function calculate_numbers(self)
+	self.numbers = {}
+	for x = self.tx, self.tw do
+		for y = self.ty, self.th do
+			local score = at(self, x - 1, y - 1) + at(self, x - 1, y) + at(self, x - 1, y + 1)
+			score = score + at(self, x, y - 1) + at(self, x, y + 1)
+			score = score + at(self, x + 1, y - 1) + at(self, x + 1, y) + at(self, x + 1, y + 1)
+			self.numbers[x * 16 + y] = score
+		end
+	end
+end
+
+local function to_grid(self, px, py)
+	local pos = go.get_position()
+	return { math.ceil((px - pos.x) / TILE_SIZE), math.ceil((py - pos.y) / TILE_SIZE) }
+end
+
+local function reveal(self, x, y)
+	if x > 0 and x <= self.tw and y > 0 and y <= self.tw then
+		local tile = tilemap.get_tile("#normal", "layer1", x, y)
+		if tile == 10 and not self.bomb_locations[x * self.tw + y] then
+			tilemap.set_tile("#normal", "layer1", x, y, self.numbers[x * self.tw + y] + 1)
+			if self.numbers[x * self.tw + y] == 0 then
+				reveal(self, x + 1, y - 1)
+				reveal(self, x + 1, y)
+				reveal(self, x + 1, y + 1)
+				reveal(self, x, y - 1)
+				reveal(self, x, y + 1)
+				reveal(self, x - 1, y - 1)
+				reveal(self, x - 1, y)
+				reveal(self, x - 1, y + 1)
+			end
+		end
+	end
+end
+
+function init(self)
+	-- Add initialization code here
+	-- Learn more: https://defold.com/manuals/script/
+	-- Remove this function if not needed
+	msg.post("@render:", "clear_color", { color = vmath.vector4(0.65, 0.65, 0.65, 0) } )
+	msg.post(".", "acquire_input_focus")
+	local tx,ty,tw,th = tilemap.get_bounds("#normal", "layer1")
+	self.tx = tx
+	self.ty = ty
+	self.tw = 16
+	self.th = 16
+	self.bomb_locations = {}
+	self.first_click = true
+	self.lost = false
+	self.won = false
+	self.face_clicked = false
+	self.selected_tile = nil
+	self.flip_left_right_input = false
+	
+	math.randomseed(socket.gettime())
+end
+
+function final(self)
+	-- Add finalization code here
+	-- Learn more: https://defold.com/manuals/script/
+	-- Remove this function if not needed
+end
+
+function update(self, dt)
+	-- Add update code here
+	-- Learn more: https://defold.com/manuals/script/
+	-- Remove this function if not needed
+end
+
+function fixed_update(self, dt)
+	-- This function is called if 'Fixed Update Frequency' is enabled in the Engine section of game.project
+	-- Can be coupled with fixed updates of the physics simulation if 'Use Fixed Timestep' is enabled in
+	-- Physics section of game.project
+	-- Add update code here
+	-- Learn more: https://defold.com/manuals/script/
+	-- Remove this function if not needed
+end
+
+function on_message(self, message_id, message, sender)
+	-- Add message-handling code here
+	-- Learn more: https://defold.com/manuals/message-passing/
+	-- Remove this function if not needed
+end
+
+function on_input(self, action_id, action)
+	local pos = to_grid(self, action.x, action.y)
+	local x = pos[1]
+	local y = pos[2]
+	
+	-- face
+	if x > 7 and x < 10 and y > 17 and y < 20 then
+		if action.pressed then
+			-- pushed face
+			self.face_clicked = true
+			set_face("pressed")
+		elseif action.released then
+			-- game face
+			set_face("smile")
+			-- reset
+			self.bomb_locations = {}
+			self.numbers = {}
+			self.first_click = true
+			self.lost = false
+			self.won = false
+			self.face_clicked = false
+
+			for x = self.tx, self.tw do
+				for y = self.ty, self.th do
+					tilemap.set_tile("#normal", "layer1", x, y, 10)
+				end
+			end
+		end
+	end
+
+	-- flip mouse button
+	if x == 13 and y == 18 and action.pressed then
+		local tile = tilemap.get_tile("#normal", "layer1", x, y)
+		if tile == 11 then
+			tilemap.set_tile("#normal", "layer1", x, y, 87)
+			self.flip_left_right_input = true
+		else
+			tilemap.set_tile("#normal", "layer1", x, y, 11)
+			self.flip_left_right_input = false
+		end
+	end
+
+	local primary_click = nil
+	local secondary_click = nil
+	if self.flip_left_right_input then
+		primary_click = "right_click"
+		secondary_click = "left_click"
+	else
+		primary_click = "left_click"
+		secondary_click = "right_click"
+	end
+	
+	-- reset face if you dragged off
+	if self.face_clicked and action.released then
+		-- TODO: this can be the wrong face
+		set_face("smile")
+		self.face_clicked = false
+	end
+
+	-- board
+	if x > 0 and x < 17 and y > 0 and y < 17 and not (self.won or self.lost) then
+		print("GOt here")
+		local tile = tilemap.get_tile("#normal", "layer1", x, y)
+		if action_id == hash(primary_click) then
+			if action.pressed then
+				-- anticipation face
+				set_face("anticipation")
+			end
+			
+			if self.selected_tile == nil then
+				-- first tile highlighted
+				if tile == 10 then
+					tilemap.set_tile("#normal", "layer1", x, y, 1)
+					self.selected_tile = { x, y }
+				end
+			elseif self.selected_tile[1] ~= x or self.selected_tile[2] ~= y then
+				-- dragging on the board
+				tilemap.set_tile("#normal", "layer1", self.selected_tile[1], self.selected_tile[2], 10)
+				if tile == 10 then
+					tilemap.set_tile("#normal", "layer1", x, y, 1)
+					self.selected_tile = { x, y }
+				end
+			end
+		end
+		
+		if action_id == hash(primary_click) and action.released then
+			if self.selected_tile and action_id == hash(primary_click) and action.released then
+				-- reset hover/dragged over tile potentially dragging outside of the board.
+				tilemap.set_tile("#normal", "layer1", self.selected_tile[1], self.selected_tile[2], 10)
+				self.selected_tile = nil
+			end
+
+			if self.first_click then
+				self.first_click = false
+				put_bombs(self, 50, x, y)
+				calculate_numbers(self)
+			end
+
+			tile = tilemap.get_tile("#normal", "layer1", x, y)
+			if tile == 11 then
+				-- game face
+				tilemap.set_tile("#normal", "layer1", 8, 19, 17)
+				tilemap.set_tile("#normal", "layer1", 9, 19, 18)
+				tilemap.set_tile("#normal", "layer1", 8, 18, 25)
+				tilemap.set_tile("#normal", "layer1", 9, 18, 26)
+				
+				tilemap.set_tile("#normal", "layer1", x, y, 10)
+			elseif tile == 10 and self.bomb_locations[x * 16 + y] then
+				print(tile)
+				-- hit bomb
+				tilemap.set_tile("#normal", "layer1", x, y, 12)
+				-- mark_bombs
+				for bx = 1, 16 do
+					for by = 1, 16 do 
+						local bt = tilemap.get_tile("#normal", "layer1", bx, by)
+						-- unmarked bombs
+						if bt == 10 and self.bomb_locations[bx * 16 + by] then
+							tilemap.set_tile("#normal", "layer1", bx, by, 13)
+						end
+						-- correctly marked bombs
+						if bt == 11 and not self.bomb_locations[bx * 16 + by] then
+							tilemap.set_tile("#normal", "layer1", bx, by, 14)
+						end
+					end
+				end
+				-- mark mine that killed you red
+				tilemap.set_tile("#normal", "layer1", x, y, 12)
+
+				-- make sad face
+				set_face("dead")
+				self.lost = true
+			else
+				-- safe space hit
+				set_face("smile")
+				reveal(self, x, y)
+				check_win(self)
+				if self.won then
+					set_face("cool")
+				end
+			end
+		end
+
+		if action_id == hash(secondary_click) and action.pressed then
+			if tile == 10 then
+				tilemap.set_tile("#normal", "layer1", x, y, 11)
+			elseif tile == 11 then
+				tilemap.set_tile("#normal", "layer1", x, y, 10)
+			end
+		end
+	end
+
+	-- TODO: this is awkward, but we repeat this to handle dragging off the edge.
+	if self.selected_tile and action_id == hash(primary_click) and action.released and not (self.won or self.lost) then
+		-- back to game face
+		set_face("smile")
+		-- reset hover/dragged over tile potentially dragging outside of the board.
+		tilemap.set_tile("#normal", "layer1", self.selected_tile[1], self.selected_tile[2], 10)
+		self.selected_tile = nil
+	end
+end
+
+function on_reload(self)
+	-- Add reload-handling code here
+	-- Learn more: https://defold.com/manuals/hot-reload/
+	-- Remove this function if not needed
+end
