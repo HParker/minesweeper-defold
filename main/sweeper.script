@@ -1,5 +1,9 @@
 TILE_SIZE = 32
 
+-- New nice features
+-- 2. hint system
+-- 3. can't mark flags before clicking at least once.
+
 local function set_face(face)
 	if face == "smile" then
 		tilemap.set_tile("#normal", "layer1", 8, 19, 17)
@@ -59,6 +63,10 @@ local function check_win(self)
 		end
 	end
 	self.won = won
+	
+	if self.won then
+		set_face("cool")
+	end
 end
 
 local function at(self, x, y)
@@ -84,6 +92,27 @@ end
 local function to_grid(self, px, py)
 	local pos = go.get_position()
 	return { math.ceil((px - pos.x) / TILE_SIZE), math.ceil((py - pos.y) / TILE_SIZE) }
+end
+
+local function reveal_depth(self, x, y, depth)
+	if x > 0 and x <= self.tw and y > 0 and y <= self.tw then
+		local tile = tilemap.get_tile("#normal", "layer1", x, y)
+		if tile == 10 and not self.bomb_locations[x * self.tw + y] then
+			if depth > 0 then
+				tilemap.set_tile("#normal", "layer1", x, y, self.numbers[x * self.tw + y] + 1)
+				if self.numbers[x * self.tw + y] == 0 then
+					table.insert(self.reveal_queue, { x = x + 1, y = y + 1 })
+					table.insert(self.reveal_queue, { x = x + 1, y = y })
+					table.insert(self.reveal_queue, { x = x + 1, y = y - 1})
+					table.insert(self.reveal_queue, { x = x, y = y - 1 })
+					table.insert(self.reveal_queue, { x = x, y = y + 1 })
+					table.insert(self.reveal_queue, { x = x - 1, y = y - 1 })
+					table.insert(self.reveal_queue, { x = x - 1, y = y })
+					table.insert(self.reveal_queue, { x = x - 1, y = y + 1 })
+				end
+			end
+		end
+	end
 end
 
 local function reveal(self, x, y)
@@ -123,7 +152,11 @@ function init(self)
 	self.face_clicked = false
 	self.selected_tile = nil
 	self.flip_left_right_input = false
-	
+
+	self.animation_timer = 0
+	self.animation_time = 0.02
+	self.reveal_queue = {}
+		
 	math.randomseed(socket.gettime())
 end
 
@@ -137,6 +170,34 @@ function update(self, dt)
 	-- Add update code here
 	-- Learn more: https://defold.com/manuals/script/
 	-- Remove this function if not needed
+	self.animation_timer = self.animation_timer + dt
+	if self.animation_timer < self.animation_time then
+		return
+	else
+		self.animation_timer = 0
+	end
+
+	
+	local cords = {}
+	while #self.reveal_queue > 0 do
+		table.insert(cords, table.remove(self.reveal_queue))
+	end
+
+	for i, cord in ipairs(cords) do
+		reveal_depth(self, cord.x, cord.y, 1)
+	end
+
+	-- just finished, set face back
+	if #cords > 0 and #self.reveal_queue == 0 then
+		set_face("smile")
+		check_win(self)
+	end
+	-- 
+	-- if #self.reveal_queue > 0 then
+	-- 	
+	-- 	local cord = table.remove(self.reveal_queue)
+	-- 	reveal_depth(self, cord.x, cord.y, 1)
+	-- end
 end
 
 function fixed_update(self, dt)
@@ -158,6 +219,10 @@ function on_input(self, action_id, action)
 	local pos = to_grid(self, action.x, action.y)
 	local x = pos[1]
 	local y = pos[2]
+
+	if #self.reveal_queue > 0 then
+		return
+	end
 	
 	-- face
 	if x > 7 and x < 10 and y > 17 and y < 20 then
@@ -205,7 +270,7 @@ function on_input(self, action_id, action)
 		primary_click = "left_click"
 		secondary_click = "right_click"
 	end
-	
+
 	-- reset face if you dragged off
 	if self.face_clicked and action.released then
 		-- TODO: this can be the wrong face
@@ -215,14 +280,13 @@ function on_input(self, action_id, action)
 
 	-- board
 	if x > 0 and x < 17 and y > 0 and y < 17 and not (self.won or self.lost) then
-		print("GOt here")
 		local tile = tilemap.get_tile("#normal", "layer1", x, y)
 		if action_id == hash(primary_click) then
 			if action.pressed then
 				-- anticipation face
 				set_face("anticipation")
 			end
-			
+
 			if self.selected_tile == nil then
 				-- first tile highlighted
 				if tile == 10 then
@@ -238,7 +302,7 @@ function on_input(self, action_id, action)
 				end
 			end
 		end
-		
+
 		if action_id == hash(primary_click) and action.released then
 			if self.selected_tile and action_id == hash(primary_click) and action.released then
 				-- reset hover/dragged over tile potentially dragging outside of the board.
@@ -247,27 +311,23 @@ function on_input(self, action_id, action)
 			end
 
 			if self.first_click then
-				self.first_click = false
-				put_bombs(self, 50, x, y)
+				put_bombs(self, 35, x, y)
 				calculate_numbers(self)
+				self.first_click = false
 			end
 
 			tile = tilemap.get_tile("#normal", "layer1", x, y)
 			if tile == 11 then
 				-- game face
-				tilemap.set_tile("#normal", "layer1", 8, 19, 17)
-				tilemap.set_tile("#normal", "layer1", 9, 19, 18)
-				tilemap.set_tile("#normal", "layer1", 8, 18, 25)
-				tilemap.set_tile("#normal", "layer1", 9, 18, 26)
-				
+				set_face("smile")
+
 				tilemap.set_tile("#normal", "layer1", x, y, 10)
 			elseif tile == 10 and self.bomb_locations[x * 16 + y] then
-				print(tile)
 				-- hit bomb
 				tilemap.set_tile("#normal", "layer1", x, y, 12)
 				-- mark_bombs
 				for bx = 1, 16 do
-					for by = 1, 16 do 
+					for by = 1, 16 do
 						local bt = tilemap.get_tile("#normal", "layer1", bx, by)
 						-- unmarked bombs
 						if bt == 10 and self.bomb_locations[bx * 16 + by] then
@@ -287,12 +347,11 @@ function on_input(self, action_id, action)
 				self.lost = true
 			else
 				-- safe space hit
-				set_face("smile")
-				reveal(self, x, y)
-				check_win(self)
-				if self.won then
-					set_face("cool")
-				end
+				-- set_face("smile")
+				-- reveal(self, x, y)
+				self.reveal_queue = { { x = x, y = y } }
+				-- check_win(self)
+				-- TODO check win after reveal queue is empty
 			end
 		end
 
